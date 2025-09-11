@@ -8,15 +8,18 @@ export default function SseClient() {
   const connectedRef = useRef(false);
 
   useEffect(() => {
-    if (connectedRef.current) return;     // StrictMode対策（重複接続防止）
+    if (connectedRef.current) return; // StrictMode対策（重複接続防止）
     connectedRef.current = true;
 
-    // 認証クッキー付きで跨ドメインに投げるなら { withCredentials: true } をつける
-    const es = new EventSource('/api/sse'); // 同一オリジン想定
+    // バックエンドSSEエンドポイント（compose内: http://backend:3001/stream）
+    const base = (process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001').replace(/\/$/, '');
+    const url = `${base}/stream`;
+
+    const es = new EventSource(url);
     esRef.current = es;
 
     es.onopen = () => {
-      setLogs((p) => [...p, '[open] connected']);
+      setLogs((p) => [...p, `[open] connected ${url}`]);
     };
 
     es.onmessage = (e) => {
@@ -40,7 +43,7 @@ export default function SseClient() {
 
     return () => {
       es.removeEventListener('ping', onPing);
-      es.close();                          // アンマウント時に明示クローズ
+      es.close(); // アンマウント時に明示クローズ
     };
   }, []);
 
