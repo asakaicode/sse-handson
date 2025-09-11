@@ -1,7 +1,9 @@
 services:
   backend:
-    build: ./backend
-    container_name: sse-backend
+    container_name: backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     ports:
       - "3001:3001"
     environment:
@@ -10,8 +12,10 @@ services:
       - sse-net
 
   frontend:
-    build: ./frontend
-    container_name: sse-frontend
+    container_name: frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     ports:
       - "3000:3000"
     environment:
