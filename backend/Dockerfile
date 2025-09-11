@@ -1,13 +1,22 @@
-FROM node:20-alpine
+FROM node:22.19.0-alpine3.21 AS builder
 WORKDIR /app
 
-# Only copy what's needed
-COPY package.json ./
-RUN npm install --no-audit --no-fund || true
+# Install deps
+COPY package.json pnpm-lock.yaml ./
+RUN corepack enable && pnpm install --frozen-lockfile
 
-COPY src ./src
+# Build
+COPY . .
+RUN pnpm run build
+
+# Runtime image
+FROM node:22.19.0-alpine3.21 AS runner
+RUN corepack enable
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/node_modules ./node_modules
 
 EXPOSE 3001
 ENV PORT=3001
-CMD ["npm", "start"]
+CMD ["pnpm", "start"]
 

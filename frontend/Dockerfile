@@ -1,27 +1,25 @@
-FROM node:20-alpine AS base
+FROM node:22.19.0-alpine3.21 AS builder
 WORKDIR /app
 
 # Install deps
-COPY package.json package-lock.json ./
-RUN npm ci --no-audit --no-fund
+COPY package.json pnpm-lock.yaml ./
+RUN corepack enable && pnpm install --frozen-lockfile
 
 # Build
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN npm run build
+RUN pnpm run build
 
 # Runtime image
-FROM node:20-alpine
+FROM node:22.19.0-alpine3.21 AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-COPY --from=base /app/node_modules ./node_modules
-COPY --from=base /app/package.json ./package.json
-COPY --from=base /app/.next ./.next
-COPY --from=base /app/public ./public
-COPY --from=base /app/next.config.ts ./next.config.ts
+RUN corepack enable
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/.next ./.next
 
 EXPOSE 3000
 ENV PORT=3000
-CMD ["npm", "start"]
-
+CMD ["pnpm", "start"]
