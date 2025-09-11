@@ -1,5 +1,7 @@
-// server.js
-const http = require('http');
+import http from 'http';
+
+const PORT = process.env.PORT ? Number(process.env.PORT) : 3001;
+const HOST = process.env.HOST || '0.0.0.0';
 
 const server = http.createServer((req, res) => {
   if (req.url === '/stream') {
@@ -64,6 +66,6 @@ const server = http.createServer((req, res) => {
   }
 });
 
-server.listen(3000, () => {
-  console.log('SSE demo http://localhost:3000');
+server.listen(PORT, HOST, () => {
+  console.log(`SSE demo http://${HOST}:${PORT}`);
 });
