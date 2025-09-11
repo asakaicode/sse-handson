@@ -1,0 +1,27 @@
+services:
+  backend:
+    build: ./backend
+    container_name: sse-backend
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+    networks:
+      - sse-net
+
+  frontend:
+    build: ./frontend
+    container_name: sse-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_BACKEND_URL=http://backend:3001
+    depends_on:
+      - backend
+    networks:
+      - sse-net
+
+networks:
+  sse-net:
+    driver: bridge
+
