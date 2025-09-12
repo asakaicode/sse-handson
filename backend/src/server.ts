@@ -1,70 +1,106 @@
-import http from 'http'
+import cors from 'cors'
+import express, { Request, Response } from 'express'
+import { nanoid } from 'nanoid'
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3001
-const HOST = process.env.HOST || '0.0.0.0'
 
-const server = http.createServer((req, res) => {
-  if (req.url === '/stream') {
-    // 必須ヘッダ
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream; charset=utf-8',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
-      'Access-Control-Allow-Origin': '*', // ファイル直開き or 他ポートの簡易CORS用
-    })
+// Replace the HTTP server implementation with Express routes below
+const app = express()
+app.use(cors({ origin: 'http://localhost:3000' }))
+app.use(express.json())
 
-    // すぐに一度フラッシュ（接続確認＆プロキシ回避）
-    res.write(': connected\n\n') // コメント（無視されるがキープアライブに使える）
+// id -> streaming state
+const streams = new Map<
+  string,
+  { text: string; cursor: number; timer: NodeJS.Timeout | null }
+>()
 
-    let id = 0
+const craftReply = (userText: string): string => {
+  const canned = [
+    'なるほど…',
+    'それは面白い視点ですね。',
+    '結論から言うと、',
+    'ポイントは次の3つです:',
+    '1) 明確な目標,',
+    '2) 小さな反復,',
+    '3) フィードバックの取り込み。',
+    '以上が私の提案です。',
+  ].join(' ')
+  return `「${userText}」への考え: ${canned}`
+}
 
-    // 1秒ごとにカスタム"ping"イベント
-    const ping = setInterval(() => {
-      const now = new Date().toISOString()
-      res.write(`id: ${++id}\n`)
-      res.write(`event: ping\n`)
-      res.write(`data: {"time":"${now}"}\n\n`)
-    }, 1000)
+app.post('/api/conversations', (req: Request, res: Response) => {
+  const message = (req.body?.message ?? '').toString()
+  if (!message) return res.status(400).json({ error: 'message is required' })
 
-    // 10秒ごとに汎用message
-    const msg = setInterval(() => {
-      const now = new Date().toISOString()
-      res.write(`data: tick ${now}\n\n`)
-    }, 10000)
-
-    // クライアント切断時
-    req.on('close', () => {
-      clearInterval(ping)
-      clearInterval(msg)
-      res.end()
-    })
-  } else {
-    // 簡易トップページ
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-    res.end(`
-      <!doctype html>
-      <meta charset="utf-8">
-      <h1>SSE Demo</h1>
-      <ul id="log"></ul>
-      <script>
-        const es = new EventSource('/stream');
-        es.onmessage = (e) => {
-          const li = document.createElement('li');
-          li.textContent = 'message: ' + e.data;
-          document.querySelector('#log').appendChild(li);
-        };
-        es.addEventListener('ping', (e) => {
-          const li = document.createElement('li');
-          li.textContent = 'ping: ' + e.data;
-          document.querySelector('#log').appendChild(li);
-        });
-        es.onerror = (err) => console.error('SSE error', err);
-        // 必要になったら es.close();
-      </script>
-    `)
-  }
+  const id = nanoid()
+  const text = craftReply(message)
+  streams.set(id, { text, cursor: 0, timer: null })
+  res.json({ id })
 })
 
-server.listen(PORT, HOST, () => {
-  console.log(`SSE demo http://${HOST}:${PORT}`)
+app.get('/api/conversations/:id/stream', (req: Request, res: Response) => {
+  const item = streams.get(req.params.id)
+  if (!item) return res.status(404).end('no such stream id')
+
+  res.setHeader('Content-Type', 'text/event-stream')
+  res.setHeader('Cache-Control', 'no-cache')
+  res.setHeader('Connection', 'keep-alive')
+  res.setHeader('X-Accel-Buffering', 'no') // nginx buffering off
+  ;(res as any).flushHeaders?.()
+
+  res.write(`event: system\n`)
+  res.write(`data: ${JSON.stringify({ startedAt: Date.now() })}\n\n`)
+
+  const words = item.text.split(/(\s+)/) // keep spaces
+  item.timer = setInterval(() => {
+    if (item.cursor >= words.length) {
+      res.write(`event: done\n`)
+      res.write(`data: { "ok": true }\n\n`)
+      clearInterval(item.timer!)
+      streams.delete(req.params.id)
+      res.end()
+      return
+    }
+    const chunk = words[item.cursor++]
+    res.write(`data: ${JSON.stringify(chunk)}\n\n`)
+  }, 40)
+
+  req.on('close', () => {
+    clearInterval(item.timer!)
+    streams.delete(req.params.id)
+  })
+})
+
+// SSE ping-like endpoint (original)
+app.get('/stream', (req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8')
+  res.setHeader('Cache-Control', 'no-cache')
+  res.setHeader('Connection', 'keep-alive')
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.write(': connected\n\n')
+
+  let id = 0
+
+  const ping = setInterval(() => {
+    const now = new Date().toISOString()
+    res.write(`id: ${++id}\n`)
+    res.write(`event: ping\n`)
+    res.write(`data: {"time":"${now}"}\n\n`)
+  }, 1000)
+
+  const msg = setInterval(() => {
+    const now = new Date().toISOString()
+    res.write(`data: tick ${now}\n\n`)
+  }, 10000)
+
+  req.on('close', () => {
+    clearInterval(ping)
+    clearInterval(msg)
+    res.end()
+  })
+})
+
+app.listen(PORT, () => {
+  console.log(`SSE backend running on http://localhost:${PORT}`)
 })
