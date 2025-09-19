@@ -37,6 +37,52 @@ export default function GptLikePage() {
 
       const es = new EventSource(`${API_BASE}/api/conversations/${id}/stream`)
 
+      // 進捗（概算ETA）
+      es.addEventListener('progress', (ev: MessageEvent) => {
+        try {
+          const p = JSON.parse(ev.data)
+          const etaSec = p?.etaSec
+          if (etaSec != null && isFinite(etaSec)) {
+            setItems((arr): Bubble[] =>
+              arr.map((it, i) => {
+                if (i !== botIndex) return it
+                if (it.html.includes('考え中…')) {
+                  return {
+                    ...it,
+                    html: it.html.replace(
+                      /<span class=\"small\">考え中…<\/span>/,
+                      `<span class=\"small\">考え中…(約${etaSec}秒)<\/span>`,
+                    ),
+                  }
+                }
+                return it
+              }),
+            )
+          }
+        } catch {}
+      })
+
+      // サーバ側が custom event: error を送った場合の処理
+      es.addEventListener('error', (ev: MessageEvent) => {
+        try {
+          const payload = JSON.parse(ev.data)
+          const msg = payload?.message ? escapeHtml(String(payload.message)) : 'エラーが発生しました'
+          es.close()
+          setItems((arr) =>
+            arr.map((it, i) => (i === botIndex ? { ...it, html: msg } : it)),
+          )
+          setBusy(false)
+        } catch {
+          es.close()
+          setItems((arr) =>
+            arr.map((it, i) =>
+              i === botIndex ? { ...it, html: 'エラーが発生しました' } : it,
+            ),
+          )
+          setBusy(false)
+        }
+      })
+
       // ② 各チャンクで "botIndex の要素" だけを functional update で書き換え
       es.onmessage = (ev) => {
         const chunk = JSON.parse(ev.data)
