@@ -7,10 +7,18 @@ SSEプロトコルに関するハンズオン資料です。
 
 ### 1) Docker Compose（推奨・最短）
 - 前提: Docker Desktop など Docker/Compose が使えること。
-- ルートディレクトリで実行:
+- ルートディレクトリで実行（Ollama なしでフロントエンド/バックエンドのみ起動）:
 
 ```bash
 docker compose up --build
+```
+
+- このモードでは SSE 応答はサンプルのフォールバック文をストリームします（モデルのダウンロードは不要）。
+
+- ローカルLLM（Ollama）も一緒に動かす場合は、環境変数とプロファイルを付けて起動:
+
+```bash
+ENABLE_OLLAMA=true docker compose --profile ollama up --build
 ```
 
 - アクセス先:
@@ -28,7 +36,7 @@ docker compose down -v
 
 初回のモデル自動ダウンロード（存在チェック）
 
-- 本リポの Ollama はカスタムイメージ（`./ollama/Dockerfile`）を使います。
+- `--profile ollama` を付けて起動した場合のみ、Ollama 用のカスタムイメージ（`./ollama/Dockerfile`）がビルドされます。
 - コンテナ起動時に `entrypoint.sh` が `OLLAMA_MODEL` の存在をAPIで確認し、未存在なら自動で pull します（既定: llama3.1:8b）。
 - 既に存在する場合は pull をスキップします（永続ボリュームに格納）。
 - モデルを変更したい場合は `docker-compose.yml` の `OLLAMA_MODEL` を編集してください。
@@ -80,6 +88,7 @@ pnpm dev
 - 環境変数（backend）
   - `OLLAMA_BASE_URL`（省略時は `http://localhost:11434`）
   - `OLLAMA_MODEL`（省略時は `llama3.1:8b`）
+  - `ENABLE_OLLAMA` を `true` にすると、Ollama を利用したストリームを実行（Docker Compose では `ENABLE_OLLAMA=true docker compose --profile ollama up --build` のように指定）
   - `FALLBACK` を `true` にすると、Ollama に繋がらない場合は固定文を返す簡易フォールバックが有効
   - `OLLAMA_MAX_TOKENS`（省略時は 256）: 推論の最大出力トークン上限（ETA計算に使用）
   - `ETA_CHARS_PER_TOKEN`（省略時は 3）: 文字→トークン換算の概算係数（言語により調整可）
