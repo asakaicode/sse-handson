@@ -18,6 +18,10 @@ const conversations = new Map<
 const OLLAMA_BASE_URL =
   process.env.OLLAMA_BASE_URL || 'http://localhost:11434'
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'llama3.1:8b'
+const ENABLE_OLLAMA =
+  String(process.env.ENABLE_OLLAMA ?? '').toLowerCase() === 'true'
+const FALLBACK_ENABLED =
+  String(process.env.FALLBACK ?? '').toLowerCase() === 'true'
 
 // Fallback canned reply (used only if local LLM is unreachable and FALLBACK=true)
 const craftReply = (userText: string): string => {
@@ -32,6 +36,18 @@ const craftReply = (userText: string): string => {
     '以上が私の提案です。',
   ].join(' ')
   return `「${userText}」への考え: ${canned}`
+}
+
+const streamFallbackReply = (res: Response, userMessage: string) => {
+  const text = craftReply(userMessage)
+  const words = text.split(/(\s+)/)
+  for (const w of words) {
+    if (!w) continue
+    res.write(`data: ${JSON.stringify(w)}\n\n`)
+  }
+  res.write(`event: done\n`)
+  res.write(`data: { \"ok\": true }\n\n`)
+  res.end()
 }
 
 app.post('/api/conversations', (req: Request, res: Response) => {
@@ -61,6 +77,12 @@ app.get('/api/conversations/:id/stream', (req: Request, res: Response) => {
 
   res.write(`event: system\n`)
   res.write(`data: ${JSON.stringify({ startedAt: Date.now() })}\n\n`)
+
+  if (!ENABLE_OLLAMA) {
+    streamFallbackReply(res, conv.message)
+    conversations.delete(req.params.id)
+    return
+  }
 
   // Stream from local LLM (Ollama)
   const controller = new AbortController()
@@ -152,15 +174,8 @@ app.get('/api/conversations/:id/stream', (req: Request, res: Response) => {
       conversations.delete(req.params.id)
     } catch (err: any) {
       // Optional fallback when local LLM is unavailable
-      if (process.env.FALLBACK === 'true') {
-        const text = craftReply(conv.message)
-        const words = text.split(/(\s+)/)
-        for (const w of words) {
-          res.write(`data: ${JSON.stringify(w)}\n\n`)
-        }
-        res.write(`event: done\n`)
-        res.write(`data: { \"ok\": true }\n\n`)
-        res.end()
+      if (FALLBACK_ENABLED) {
+        streamFallbackReply(res, conv.message)
       } else {
         res.write(`event: error\n`)
         res.write(
